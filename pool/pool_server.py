@@ -2,6 +2,8 @@ import asyncio
 import logging
 import time
 import traceback
+import ssl
+import os
 from typing import Dict, Callable, Optional
 
 import aiohttp
@@ -80,7 +82,7 @@ class PoolServer:
         return inner
 
     async def index(self, _) -> web.Response:
-        return web.Response(text="Chia reference pool")
+        return web.Response(text="BigDream and SVM pool")
 
     async def get_pool_info(self, _) -> web.Response:
         res: GetPoolInfoResponse = GetPoolInfoResponse(
@@ -271,6 +273,7 @@ async def start_pool_server(pool_store: Optional[AbstractPoolStore] = None):
     await server.start()
 
     # TODO(pool): support TLS
+
     app = web.Application()
     app.add_routes(
         [
@@ -285,7 +288,12 @@ async def start_pool_server(pool_store: Optional[AbstractPoolStore] = None):
     )
     runner = aiohttp.web.AppRunner(app, access_log=None)
     await runner.setup()
-    site = aiohttp.web.TCPSite(runner, "0.0.0.0", int(80))
+    ssl_cert = os.path.expanduser("~/device_key/device.pem")
+    ssl_key = os.path.expanduser("~/device_key/device.key")
+    ssl_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+
+    ssl_context.load_cert_chain(str(ssl_cert), str(ssl_key))
+    site = aiohttp.web.TCPSite(runner, "0.0.0.0", int(8900), ssl_context=ssl_context)
     await site.start()
 
     while True:

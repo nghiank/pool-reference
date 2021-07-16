@@ -210,4 +210,21 @@ INFO:root:Returning {'new_difficulty': 1963211364}, time: 0.017535686492919922 s
 Please send a message to @sorgente711 on keybase if you have questions about the 9 steps explained above. All other questions
 should be send to the #pools channel in keybase. 
 
+10. Setup Local SSL:
+The Root CA will be created in ~/key. The Device CA is created in ~/device_key. pool_server.py will use these device.pem and device.key. Accessing https://127.0.0.1:8900 may see a warning risk because the Root CA is locally generated. Accept the risk!
+```
+cd ~
+mkdir ~/key
+cd ~/key
+openssl genrsa -aes256 -out ca.key 4096
+openssl req -new -x509 -nodes -key ca.key -out ca.pem -days 1000
+
+mkdir ~/device_key
+cd ~/device_key
+openssl genrsa -out device.key 4096
+openssl req -new -key device.key -out device.csr
+openssl x509 -CA ~/key/ca.pem -CAkey ~/key/ca.key -CAcreateserial -req -in device.csr -out device.pem -days 365
+```
+
+
  
