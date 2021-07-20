@@ -1,9 +1,9 @@
 pool_info:
-  default_res: Chia reference pool
-  name: The Reference Pool
+  default_res: Vast pool
+  name: The Vast Pool
   logo_url: https://www.chia.net/img/chia_logo.svg
-  description: (example) The Reference Pool allows you to pool with low fees, paying out daily using Chia.
-welcome_message: "Welcome to the reference pool!"
+  description: The Vast Pool allows you to pool with low fees, paying out daily using Chia.
+welcome_message: "Welcome to the Vast pool!"
 pool_fee: 0.01
 pool_url: http://10.0.0.45
 min_difficulty: 10
@@ -26,7 +26,7 @@ number_of_partials_target: 300
 time_target: 86400
 relative_lock_height: 32
 logging:
-  log_path: /var/log/chia
+  log_path: ~/log/chia
   log_filename: pool-server.log
   log_level: INFO
   log_maxfilesrotation: 7
