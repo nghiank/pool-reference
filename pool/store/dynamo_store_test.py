@@ -1,21 +1,23 @@
-# =>python -m unittest pool/store/sqlite_store_test.py
+# Start local DynamoDB: 
+# =>java -Djava.library.path=./DynamoDBLocal_lib -jar DynamoDBLocal.jar -sharedDb
+# Run test:
+# =>python -m unittest pool/store/dynamo_store_test.py
 # Suggest to have Python > 3.9.5
 # Ctl+C to interupt when done
 
-from pool.store.dynamo_store_test import ONE_BYTES
 from unittest import IsolatedAsyncioTestCase
 from typing import Optional, Set, List, Tuple, Dict
 import unittest
 import sys
-import aiosqlite
 import asyncio
 import os.path
+from moto import mock_dynamodb2
 from secrets import token_bytes
 from pathlib import Path
 from clvm_tools import binutils
 from blspy import G1Element, PrivateKey
 sys.path.append('..')
-from pool.store.sqlite_store import SqlitePoolStore
+from pool.store.dynamo_store import DynamoPoolStore
 from pool.record import FarmerRecord
 from pool.util import RequestMetadata
 from chia.types.coin_solution import CoinSolution
@@ -29,33 +31,27 @@ from chia.util.byte_types import hexstr_to_bytes
 PAYOUT_INSTRUCTION = '344587cf06a39db471d2cc027504e8688a0a67cce961253500c956c73603fd58'
 ONE=1
 TWO=2
+THREE=3
 ONE_BYTES=ONE.to_bytes(32, 'big')
 TWO_BYTES=TWO.to_bytes(32, 'big')
+THREE_BYTES=THREE.to_bytes(32, 'big')
 LAUNCHER_ID=ONE_BYTES
 LAUNCHER_ID2=TWO_BYTES
+LAUNCHER_ID3=THREE_BYTES
 
-def get_table_sql_query(table_name):
-    return f"SELECT name FROM sqlite_master WHERE type='table' AND name='{table_name}';"
+class DynamoPoolStoreTest(IsolatedAsyncioTestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.store = DynamoPoolStore()
 
-class Testdb(IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
-        self.store = SqlitePoolStore(Path("test.sqlite"))
         await self.store.connect()
     
     async def asyncTearDown(self):
-        cursor = await self.store.connection.execute("delete from farmer")        
-        await cursor.close()
-        await self.store.connection.commit()
-        cursor = await self.store.connection.execute("delete from partial")        
-        await cursor.close()
-        await self.store.connection.commit()
-
-    async def check_table_exist(self,tablename):
-            sql_string = get_table_sql_query(tablename)
-            self.store.connection = await aiosqlite.connect(self.store.db_path)
-            cursor = await self.store.connection.execute(sql_string)              
-            result = await cursor.fetchone()
-            return result                
+        table_farmer = self.store.get_farmer_table()
+        table_farmer.delete()
+        table_partial = self.store.get_partial_table()
+        table_partial.delete()
     
     def make_child_solution(self) -> CoinSolution:
         new_puzzle_hash: bytes32 = token_bytes(32)
@@ -77,16 +73,17 @@ class Testdb(IsolatedAsyncioTestCase):
         target_puzzle_hash = hexstr_to_bytes('344587cf06a39db471d2cc027504e8688a0a67cce961253500c956c73603fd58')
         return PoolState(1, FARMING_TO_POOL, target_puzzle_hash, p, "pool.com", uint32(10))
 
-    def make_farmer_record(self, launcher_id=LAUNCHER_ID, p2_singleton_puzzle_hash=ONE_BYTES) -> FarmerRecord:
-        random=1
-        p = PrivateKey.from_bytes(random.to_bytes(32, "big")).get_g1()
+    def make_farmer_record(self, 
+        launcher_id=LAUNCHER_ID, 
+        p2_singleton_puzzle_hash=ONE_BYTES,
+        delay_time=60, 
+        point=10000, difficulty=2000) -> FarmerRecord:
+
+        p = PrivateKey.from_bytes(ONE_BYTES).get_g1()
         blob = bytes(p)
         authentication_pk = G1Element.from_bytes(blob)
         singleton_tip:CoinSolution = self.make_child_solution()
         singleton_tip_state:PoolState = self.make_singleton_tip_state()
-        delay_time:uint64 = 60
-        point:uint64 = 10000
-        difficulty:uint64 = 2000
         payout_instruction = '344587cf06a39db471d2cc027504e8688a0a67cce961253500c956c73603fd58'
         return FarmerRecord(
                 #launcher_id
@@ -99,7 +96,7 @@ class Testdb(IsolatedAsyncioTestCase):
                 delay_time,
 
                 #delay_puzzle_hash,
-                random.to_bytes(32, 'big'),
+                ONE_BYTES,
 
                 #authentication_public_key   
                 authentication_pk,
@@ -131,12 +128,11 @@ class Testdb(IsolatedAsyncioTestCase):
             query=dict({}),
             remote='1.1.1.1',
         )
-    
+
     async def test_if_tables_exist(self):     
-        is_farmer_table_exist = await self.check_table_exist("farmer")          
-        is_partial_table_exist = await self.check_table_exist("partial")
-        self.assertTrue(is_farmer_table_exist) 
-        self.assertTrue(is_partial_table_exist)
+        existing_tables = self.store.client.list_tables()['TableNames']
+        self.assertTrue('farmer' in existing_tables)
+        self.assertTrue('partial' in existing_tables)
 
     async def test_get_unavailable_farmer_record(self):
         farmer_record = self.make_farmer_record()
@@ -152,27 +148,34 @@ class Testdb(IsolatedAsyncioTestCase):
         self.assertEqual(farmer_record, res)
 
     async def test_add_farmer_record_twice(self):
-        farmer_record = self.make_farmer_record()
         metadata = self.make_request_metadata()
+
+        farmer_record = self.make_farmer_record()
         await self.store.add_farmer_record(farmer_record, metadata)
-        await self.store.add_farmer_record(farmer_record, metadata)
+
+        updated_farmer_record = self.make_farmer_record(point=1)
+        await self.store.add_farmer_record(updated_farmer_record, metadata)
+
         res = await self.store.get_farmer_record(farmer_record.launcher_id)
-        self.assertEqual(farmer_record, res)
+        self.assertEqual(res.points, 1)
 
     async def test_update_difficult(self):
-        farmer_record = self.make_farmer_record()
-        launcher_id = farmer_record.launcher_id
         metadata = self.make_request_metadata()
+
+        farmer_record = self.make_farmer_record()
+        launcher_id = farmer_record.launcher_id        
         await self.store.add_farmer_record(farmer_record, metadata)
+
         await self.store.update_difficulty(launcher_id, 1234)
+
         new_farmer = await self.store.get_farmer_record(launcher_id)
-        self.assertEqual(new_farmer.difficulty, 1234)
+        self.assertEqual(new_farmer.difficulty, 1234)   
 
     async def test_update_difficult_for_non_exist_farmer(self):
         farmer_record = self.make_farmer_record()
         launcher_id = farmer_record.launcher_id
         await self.store.update_difficulty(launcher_id, 1234)
-
+      
     async def test_update_singleton(self):
         farmer_record = self.make_farmer_record()
         launcher_id = farmer_record.launcher_id
@@ -187,7 +190,7 @@ class Testdb(IsolatedAsyncioTestCase):
         await self.store.update_singleton(launcher_id, new_singleton_tip, new_singleton_tip_state, False)
         new_farmer = await self.store.get_farmer_record(launcher_id)
         self.assertEqual(new_farmer.singleton_tip, new_singleton_tip)
-        self.assertEqual(new_farmer.singleton_tip_state, new_singleton_tip_state)
+        self.assertEqual(new_farmer.singleton_tip_state, new_singleton_tip_state) 
         self.assertFalse(new_farmer.is_pool_member)
     
     async def test_get_pay_to_singleton_phs(self):
@@ -195,17 +198,41 @@ class Testdb(IsolatedAsyncioTestCase):
         launcher_id = farmer_record.launcher_id
         metadata = self.make_request_metadata()
         await self.store.add_farmer_record(farmer_record, metadata)
-        res = await self.store.get_pay_to_singleton_phs()
-        random = 1
-        self.assertEqual(res, {random.to_bytes(32, "big")})
 
+        res = await self.store.get_pay_to_singleton_phs()
+        self.assertEqual(res, {ONE_BYTES})
+
+    async def test_get_pay_to_singleton_phs_return_multiples(self):
+        metadata = self.make_request_metadata()
+
+        farmer_record = self.make_farmer_record()
+        await self.store.add_farmer_record(farmer_record, metadata)
+
+        farmer_record = self.make_farmer_record(launcher_id=TWO_BYTES, p2_singleton_puzzle_hash=TWO_BYTES)
+        await self.store.add_farmer_record(farmer_record, metadata)
+
+        res = await self.store.get_pay_to_singleton_phs()
+        self.assertEqual(res, {ONE_BYTES, TWO_BYTES})
+
+    async def test_get_pay_to_singleton_phs_duplicate_p2sph(self):
+        metadata = self.make_request_metadata()
+
+        farmer_record = self.make_farmer_record(launcher_id=ONE_BYTES, p2_singleton_puzzle_hash=TWO_BYTES)
+        await self.store.add_farmer_record(farmer_record, metadata)
+
+        farmer_record = self.make_farmer_record(launcher_id=TWO_BYTES, p2_singleton_puzzle_hash=TWO_BYTES)
+        await self.store.add_farmer_record(farmer_record, metadata)
+
+        res = await self.store.get_pay_to_singleton_phs()
+        self.assertEqual(res, {TWO_BYTES})
+    
     async def test_get_farmer_records_for_p2_singleton_phs(self):
         farmer_record = self.make_farmer_record()
         launcher_id = farmer_record.launcher_id
         metadata = self.make_request_metadata()
         await self.store.add_farmer_record(farmer_record, metadata)
-        random = 1
-        puzzle_hashes = {random.to_bytes(32, "big")}
+        puzzle_hashes: Set[bytes32] = set()
+        puzzle_hashes.add(ONE_BYTES)
         res = await self.store.get_farmer_records_for_p2_singleton_phs(puzzle_hashes)
         self.assertEqual(farmer_record, res[0])
 
@@ -217,13 +244,18 @@ class Testdb(IsolatedAsyncioTestCase):
 
         farmer_record2 = self.make_farmer_record(launcher_id=LAUNCHER_ID2 ,p2_singleton_puzzle_hash=TWO_BYTES)
         await self.store.add_farmer_record(farmer_record2, metadata)
-        random = 1
+
+        farmer_record3 = self.make_farmer_record(launcher_id=LAUNCHER_ID3 ,p2_singleton_puzzle_hash=THREE_BYTES)
+        await self.store.add_farmer_record(farmer_record3, metadata)
+
         puzzle_hashes: Set[bytes32] = set()
         puzzle_hashes.add(ONE_BYTES)
         puzzle_hashes.add(TWO_BYTES)
         res = await self.store.get_farmer_records_for_p2_singleton_phs(puzzle_hashes)
+        self.assertEqual(2, len(res))
         self.assertEqual(farmer_record, res[0])
-
+        self.assertEqual(farmer_record2, res[1])
+        
     async def test_get_farmer_points_and_payout_instructions(self):
         farmer_record = self.make_farmer_record()
         launcher_id = farmer_record.launcher_id
@@ -231,15 +263,35 @@ class Testdb(IsolatedAsyncioTestCase):
         await self.store.add_farmer_record(farmer_record, metadata)
         res = await self.store.get_farmer_points_and_payout_instructions()
         self.assertEqual(res, [(10000, bytes32(bytes.fromhex(PAYOUT_INSTRUCTION)))])
- 
-    async def test_clear_farmer_points(self):
-        farmer_record = self.make_farmer_record()
-        launcher_id = farmer_record.launcher_id
+
+    async def test_get_farmer_points_and_multple_payout_instructions(self):
         metadata = self.make_request_metadata()
+
+        farmer_record = self.make_farmer_record()
         await self.store.add_farmer_record(farmer_record, metadata)
+
+        farmer_record2 = self.make_farmer_record(launcher_id=LAUNCHER_ID2 ,p2_singleton_puzzle_hash=TWO_BYTES)
+        await self.store.add_farmer_record(farmer_record2, metadata)
+
+        res = await self.store.get_farmer_points_and_payout_instructions()
+        self.assertEqual(res, [(10000*2, bytes32(bytes.fromhex(PAYOUT_INSTRUCTION)))])
+    
+    async def test_clear_farmer_points(self):
+        metadata = self.make_request_metadata()
+
+        farmer_record = self.make_farmer_record()
+        await self.store.add_farmer_record(farmer_record, metadata)
+
+        farmer_record2 = self.make_farmer_record(launcher_id=LAUNCHER_ID2, p2_singleton_puzzle_hash=TWO_BYTES)
+        await self.store.add_farmer_record(farmer_record2, metadata)
+
         await self.store.clear_farmer_points()
-        new_farmer = await self.store.get_farmer_record(launcher_id)
-        self.assertEqual(new_farmer.points, 0)
+
+        farmer = await self.store.get_farmer_record(LAUNCHER_ID)
+        self.assertEqual(farmer.points, 0)
+        farmer2 = await self.store.get_farmer_record(LAUNCHER_ID2)
+        self.assertEqual(farmer2.points, 0)
+
 
     async def test_add_partial(self):
         farmer_record = self.make_farmer_record()
@@ -251,30 +303,10 @@ class Testdb(IsolatedAsyncioTestCase):
         await self.store.add_partial(launcher_id, timestamp, new_difficulty)
         new_farmer = await self.store.get_farmer_record(launcher_id)
         self.assertEqual(new_farmer.points, 10000 + 3000)
-        partial = await self.store.get_recent_partials(launcher_id, 1)
-        self.assertEqual(partial[0], (123456, 3000))
-    
-    async def test_add_many_partial(self):        
-        farmer_record = self.make_farmer_record()
-        launcher_id = farmer_record.launcher_id
-        metadata = self.make_request_metadata()
-        await self.store.add_farmer_record(farmer_record, metadata)
-        new_difficulty = 3000
-        timestamp = 123456
-        await self.store.add_partial(launcher_id, timestamp, new_difficulty)
-        
-        new_difficulty = 4000
-        timestamp = 123457
-        await self.store.add_partial(launcher_id, timestamp, new_difficulty)
-        partial = await self.store.get_recent_partials(launcher_id, 1)
-        self.assertEqual(partial[0], (123457,4000))
 
-        partial = await self.store.get_recent_partials(launcher_id, 2)
-        self.assertEqual(partial[0], (123457,4000))
-        self.assertEqual(partial[1], (123456,3000))
-
-
-
+        #partial = await self.store.get_recent_partials(launcher_id, 2)
+        #self.assertEqual(partial[0], (123457,4000))
+        #self.assertEqual(partial[1], (123456,3000))
 
 
 if __name__ == '__main__':
