@@ -4,8 +4,9 @@ pool_info:
   logo_url: https://www.chia.net/img/chia_logo.svg
   description: The Vast Pool allows you to pool with low fees, paying out daily using Chia.
 welcome_message: "Welcome to the Vast pool!"
+local_debug: False
 pool_fee: 0.01
-pool_url: http://10.0.0.45
+pool_url: https://vastpool.net
 min_difficulty: 10
 default_difficulty: 10
 default_target_address: txch1h8vdax8vtspx7yt8kz6cwu2awymlgwmdr4qts8v643kusd2lmc5qht7ltq

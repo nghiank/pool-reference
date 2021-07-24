@@ -6,7 +6,7 @@ from typing import Optional, Set, List, Tuple, Dict
 from blspy import G1Element
 from chia.pools.pool_wallet_info import PoolState
 from chia.types.blockchain_format.sized_bytes import bytes32
-from chia.types.coin_solution import CoinSolution
+from chia.types.coin_spend import CoinSpend
 from chia.util.ints import uint64
 
 from .abstract import AbstractPoolStore
@@ -123,7 +123,7 @@ class DynamoPoolStore(AbstractPoolStore):
             item['delay_time'],
             bytes.fromhex(item['delay_puzzle_hash']),
             G1Element.from_bytes(bytes.fromhex(item['authentication_public_key'])),
-            CoinSolution.from_bytes(item['singleton_tip'].value),
+            CoinSpend.from_bytes(item['singleton_tip'].value),
             PoolState.from_bytes(item['singleton_tip_state'].value),
             item['points'],
             item['difficulty'],
@@ -176,7 +176,7 @@ class DynamoPoolStore(AbstractPoolStore):
     async def update_singleton(
         self,
         launcher_id: bytes32,
-        singleton_tip: CoinSolution,
+        singleton_tip: CoinSpend,
         singleton_tip_state: PoolState,
         is_pool_member: bool):
         table = self.get_farmer_table()

@@ -20,7 +20,7 @@ sys.path.append('..')
 from pool.store.dynamo_store import DynamoPoolStore
 from pool.record import FarmerRecord
 from pool.util import RequestMetadata
-from chia.types.coin_solution import CoinSolution
+from chia.types.coin_spend import CoinSpend
 from chia.util.ints import uint64,uint32
 from chia.types.blockchain_format.sized_bytes import bytes32
 from chia.types.blockchain_format.coin import Coin
@@ -53,13 +53,13 @@ class DynamoPoolStoreTest(IsolatedAsyncioTestCase):
         table_partial = self.store.get_partial_table()
         table_partial.delete()
     
-    def make_child_solution(self) -> CoinSolution:
+    def make_child_solution(self) -> CoinSpend:
         new_puzzle_hash: bytes32 = token_bytes(32)
         solution = "()"
         puzzle = f"(q . ((51 0x{new_puzzle_hash.hex()} 1)))"
         puzzle_prog = Program.to(binutils.assemble(puzzle))
         solution_prog = Program.to(binutils.assemble(solution))
-        sol: CoinSolution = CoinSolution(
+        sol: CoinSpend = CoinSpend(
             Coin(token_bytes(32), token_bytes(32), uint64(12312)),
             SerializedProgram.from_program(puzzle_prog),
             SerializedProgram.from_program(solution_prog),
@@ -82,7 +82,7 @@ class DynamoPoolStoreTest(IsolatedAsyncioTestCase):
         p = PrivateKey.from_bytes(ONE_BYTES).get_g1()
         blob = bytes(p)
         authentication_pk = G1Element.from_bytes(blob)
-        singleton_tip:CoinSolution = self.make_child_solution()
+        singleton_tip:CoinSpend = self.make_child_solution()
         singleton_tip_state:PoolState = self.make_singleton_tip_state()
         payout_instruction = '344587cf06a39db471d2cc027504e8688a0a67cce961253500c956c73603fd58'
         return FarmerRecord(
@@ -181,7 +181,7 @@ class DynamoPoolStoreTest(IsolatedAsyncioTestCase):
         launcher_id = farmer_record.launcher_id
         metadata = self.make_request_metadata()
         await self.store.add_farmer_record(farmer_record, metadata)
-        new_singleton_tip:CoinSolution = self.make_child_solution()
+        new_singleton_tip:CoinSpend = self.make_child_solution()
         random = 2
         p = PrivateKey.from_bytes(random.to_bytes(32, "big")).get_g1()
         blob = bytes(p)
