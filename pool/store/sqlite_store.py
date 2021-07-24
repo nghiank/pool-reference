@@ -139,6 +139,7 @@ class SqlitePoolStore(AbstractPoolStore):
         if len(puzzle_hashes) == 0:
             return []
         puzzle_hashes_db = tuple([ph.hex() for ph in list(puzzle_hashes)])
+        #await self.connection.set_trace_callback(print)
         cursor = await self.connection.execute(
             f'SELECT * from farmer WHERE p2_singleton_puzzle_hash in ({"?," * (len(puzzle_hashes_db) - 1)}?) ',
             puzzle_hashes_db,

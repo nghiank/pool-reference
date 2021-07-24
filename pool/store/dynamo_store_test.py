@@ -302,11 +302,17 @@ class DynamoPoolStoreTest(IsolatedAsyncioTestCase):
         timestamp:uint64 = 123456
         await self.store.add_partial(launcher_id, timestamp, new_difficulty)
         new_farmer = await self.store.get_farmer_record(launcher_id)
-        self.assertEqual(new_farmer.points, 10000 + 3000)
+        self.assertEqual(new_farmer.points, 10000 + new_difficulty)
 
-        #partial = await self.store.get_recent_partials(launcher_id, 2)
-        #self.assertEqual(partial[0], (123457,4000))
-        #self.assertEqual(partial[1], (123456,3000))
+
+        await self.store.add_partial(launcher_id, timestamp+1, new_difficulty+1)
+        partial = await self.store.get_recent_partials(launcher_id, 1)
+        self.assertEqual(partial[0], (123457,3001))
+
+        await self.store.add_partial(launcher_id, timestamp+2, new_difficulty+2)
+        partial = await self.store.get_recent_partials(launcher_id, 2)
+        self.assertEqual(partial[0], (123458,3002))
+        self.assertEqual(partial[1], (123457,3001))
 
 
 if __name__ == '__main__':

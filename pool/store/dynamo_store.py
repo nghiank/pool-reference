@@ -1,4 +1,5 @@
 import boto3
+from boto3.dynamodb.conditions import Key
 from boto3.dynamodb.types import Binary
 from pathlib import Path
 from typing import Optional, Set, List, Tuple, Dict
@@ -99,8 +100,8 @@ class DynamoPoolStore(AbstractPoolStore):
                 },
             ],
             ProvisionedThroughput={
-                'ReadCapacityUnits': 5,
-                'WriteCapacityUnits': 5
+                'ReadCapacityUnits': 20,
+                'WriteCapacityUnits': 20
             }
         )
 
@@ -279,9 +280,18 @@ class DynamoPoolStore(AbstractPoolStore):
 
 
     async def get_recent_partials(self, launcher_id: bytes32, count: int) -> List[Tuple[uint64, uint64]]:
-        #partial_table = self.get_partial_table()
-        #partial_table.query(
-        #   KeyConditionExpression=Key('launcher_id').eq(1) 
-        #)
-        print('failed')
+        partial_table = self.get_partial_table()
+        response = partial_table.query(
+            KeyConditionExpression='launcher_id = :id',
+            ExpressionAttributeValues={
+                ':id': launcher_id.hex()
+            },
+            Select='ALL_ATTRIBUTES',
+            ScanIndexForward=False,
+            Limit=count
+        )
+        ret: List[Tuple[uint64, uint64]]  = []
+        for item in response['Items']:
+            ret.append((uint64(item['timestamp']), uint64(item['difficulty'])))
+        return ret 
 
