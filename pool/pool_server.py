@@ -292,6 +292,7 @@ async def start_pool_server(pool_store: Optional[AbstractPoolStore] = None):
     runner = aiohttp.web.AppRunner(app, access_log=None)
     await runner.setup()
     if server.pool.local_debug:
+        print("Starting local debug")
         ssl_cert = os.path.expanduser("~/device_key/device.pem")
         ssl_key = os.path.expanduser("~/device_key/device.key")
         ssl_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
@@ -317,7 +318,7 @@ def main():
         with open(os.getcwd() + "/config.yaml") as f:
             pool_config: Dict = yaml.safe_load(f)
         pool_store = DynamoPoolStore(endpoint=pool_config['db_endpoint'])
-        asyncio.run(start_pool_server())
+        asyncio.run(start_pool_server(pool_store=pool_store))
     except KeyboardInterrupt:
         asyncio.run(stop())
 
