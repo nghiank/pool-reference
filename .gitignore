@@ -3,3 +3,8 @@ config.yaml
 venv
 __pycache__
 *.sqlite
+*.sqlite-shm
+*.sqlite-wal
+pooldb.sqlite-shm
+pooldb.sqlite-wal
+

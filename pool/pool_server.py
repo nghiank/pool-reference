@@ -4,11 +4,13 @@ import time
 import traceback
 import ssl
 import os
+import yaml
 from typing import Dict, Callable, Optional
 
 import aiohttp
 from blspy import AugSchemeMPL, G2Element
 from aiohttp import web
+from .store.dynamo_store import DynamoPoolStore
 from chia.protocols.pool_protocol import (
     PoolErrorCode,
     GetFarmerResponse,
@@ -289,12 +291,16 @@ async def start_pool_server(pool_store: Optional[AbstractPoolStore] = None):
     )
     runner = aiohttp.web.AppRunner(app, access_log=None)
     await runner.setup()
-    ssl_cert = os.path.expanduser("~/device_key/device.pem")
-    ssl_key = os.path.expanduser("~/device_key/device.key")
-    ssl_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+    if server.pool.local_debug:
+        ssl_cert = os.path.expanduser("~/device_key/device.pem")
+        ssl_key = os.path.expanduser("~/device_key/device.key")
+        ssl_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
 
-    ssl_context.load_cert_chain(str(ssl_cert), str(ssl_key))
-    site = aiohttp.web.TCPSite(runner, "0.0.0.0", int(8900), ssl_context=ssl_context)
+        ssl_context.load_cert_chain(str(ssl_cert), str(ssl_key))
+        site = aiohttp.web.TCPSite(runner, "0.0.0.0", int(8900), ssl_context=ssl_context)
+    else:
+        site = aiohttp.web.TCPSite(runner, "0.0.0.0", int(8900))
+
     await site.start()
 
     while True:
@@ -308,6 +314,9 @@ async def stop():
 
 def main():
     try:
+        with open(os.getcwd() + "/config.yaml") as f:
+            pool_config: Dict = yaml.safe_load(f)
+        pool_store = DynamoPoolStore(endpoint=pool_config['db_endpoint'])
         asyncio.run(start_pool_server())
     except KeyboardInterrupt:
         asyncio.run(stop())

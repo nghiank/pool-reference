@@ -74,6 +74,7 @@ class Pool:
         initialize_logging("pool", pool_config["logging"], pathlib.Path(pool_config["logging"]["log_path"]))
 
         # Set our pool info here
+        self.local_debug = pool_config['local_debug']
         self.info_default_res = pool_config["pool_info"]["default_res"]
         self.info_name = pool_config["pool_info"]["name"]
         self.info_logo_url = pool_config["pool_info"]["logo_url"]

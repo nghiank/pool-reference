@@ -11,7 +11,6 @@ import unittest
 import sys
 import asyncio
 import os.path
-from moto import mock_dynamodb2
 from secrets import token_bytes
 from pathlib import Path
 from clvm_tools import binutils
@@ -39,10 +38,10 @@ LAUNCHER_ID=ONE_BYTES
 LAUNCHER_ID2=TWO_BYTES
 LAUNCHER_ID3=THREE_BYTES
 
-class DynamoPoolStoreTest(IsolatedAsyncioTestCase):
+class DynamoPoolStoreTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.store = DynamoPoolStore()
+        cls.store = DynamoPoolStore(endpoint='http://localhost:8000')
 
     async def asyncSetUp(self):
         await self.store.connect()
@@ -131,6 +130,8 @@ class DynamoPoolStoreTest(IsolatedAsyncioTestCase):
 
     async def test_if_tables_exist(self):     
         existing_tables = self.store.client.list_tables()['TableNames']
+        print("Hellow world=")
+        print(existing_tables)
         self.assertTrue('farmer' in existing_tables)
         self.assertTrue('partial' in existing_tables)
 

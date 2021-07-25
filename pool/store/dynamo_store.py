@@ -18,11 +18,11 @@ class DynamoPoolStore(AbstractPoolStore):
     Pool store based on SQLite.
     """
 
-    def __init__(self, db_path: Path = Path("pooldb.sqlite")):
+    def __init__(self, endpoint="http://localhost:8000"):
         super().__init__()
         # Get the service resource.
-        self.client = boto3.client('dynamodb', endpoint_url='http://localhost:8000')
-        self.dynamodb = boto3.resource('dynamodb', endpoint_url='http://localhost:8000')
+        self.client = boto3.client('dynamodb', endpoint_url=endpoint)
+        self.dynamodb = boto3.resource('dynamodb', endpoint_url=endpoint)
 
     def get_farmer_table(self):
        return self.dynamodb.Table('farmer') 

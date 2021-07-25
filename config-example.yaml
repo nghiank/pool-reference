@@ -7,6 +7,7 @@ welcome_message: "Welcome to the Vast pool!"
 local_debug: False
 pool_fee: 0.01
 pool_url: https://vastpool.net
+db_endpoint: dynamodb.us-west-1.amazonaws.com
 min_difficulty: 10
 default_difficulty: 10
 default_target_address: txch1h8vdax8vtspx7yt8kz6cwu2awymlgwmdr4qts8v643kusd2lmc5qht7ltq
