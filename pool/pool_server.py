@@ -294,11 +294,6 @@ async def start_pool_server(pool_store: Optional[AbstractPoolStore] = None):
     server = PoolServer(config, constants, pool_store)
     await server.start()
 
-<<<<<<< HEAD
-    # TODO(pool): support TLS
-
-=======
->>>>>>> upstream/main
     app = web.Application()
     app.add_routes(
         [
