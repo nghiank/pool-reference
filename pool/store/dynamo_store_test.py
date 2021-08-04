@@ -5,7 +5,6 @@
 # Suggest to have Python > 3.9.5
 # Ctl+C to interupt when done
 
-from unittest import IsolatedAsyncioTestCase
 from typing import Optional, Set, List, Tuple, Dict
 import unittest
 import sys

@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+from pool.store.mongodb_store import MongoDbPoolStore
 import ssl
 import time
 import traceback
@@ -13,7 +14,7 @@ import aiohttp
 import yaml
 from blspy import AugSchemeMPL, G2Element
 from aiohttp import web
-from .store.dynamo_store import DynamoPoolStore
+from .store.mongodb_store import MongoDbPoolStore
 from chia.protocols.pool_protocol import (
     PoolErrorCode,
     GetFarmerResponse,
@@ -330,7 +331,7 @@ def main():
     try:
         with open(os.getcwd() + "/config.yaml") as f:
             pool_config: Dict = yaml.safe_load(f)
-        pool_store = DynamoPoolStore(endpoint=pool_config['db_endpoint'])
+        pool_store = MongoDbPoolStore(endpoint=pool_config['db_endpoint'])
         asyncio.run(start_pool_server(pool_store=pool_store))
     except KeyboardInterrupt:
         asyncio.run(stop())
