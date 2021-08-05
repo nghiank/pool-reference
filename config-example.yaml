@@ -8,6 +8,7 @@ local_debug: False
 pool_fee: 0.01
 pool_url: https://vastpool.net
 db_endpoint: mongodb://127.0.0.1:27017
+db_name: pool_test
 min_difficulty: 10
 default_difficulty: 10
 default_target_address: txch1h8vdax8vtspx7yt8kz6cwu2awymlgwmdr4qts8v643kusd2lmc5qht7ltq

@@ -331,7 +331,7 @@ def main():
     try:
         with open(os.getcwd() + "/config.yaml") as f:
             pool_config: Dict = yaml.safe_load(f)
-        pool_store = MongoDbPoolStore(endpoint=pool_config['db_endpoint'])
+        pool_store = MongoDbPoolStore(endpoint=pool_config['db_endpoint'], db_name=pool_config['db_name'])
         asyncio.run(start_pool_server(pool_store=pool_store))
     except KeyboardInterrupt:
         asyncio.run(stop())
