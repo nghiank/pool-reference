@@ -14,7 +14,7 @@ from ..record import FarmerRecord
 from ..util import RequestMetadata
 
 import pymongo
-import pprint
+import logging
 
 class MongoDbPoolStore(AbstractPoolStore):
     """
@@ -29,6 +29,7 @@ class MongoDbPoolStore(AbstractPoolStore):
         super().__init__()
         self.client = pymongo.MongoClient(endpoint, serverSelectionTimeoutMS=8888)                
         self.db_name = db_name
+        self.log = logging.getLogger(__name__)
     
     def create_farmer(self):
         farmer = self.db[MongoDbPoolStore.FARMER]
@@ -169,9 +170,10 @@ class MongoDbPoolStore(AbstractPoolStore):
     async def get_recent_partials(self, launcher_id: bytes32, count: int) -> List[Tuple[uint64, uint64]]:
         partial = self.db[MongoDbPoolStore.PARTIAL]
         results = partial.find({'launcher_id': launcher_id.hex()}).limit(count).sort("timestamp", -1)
-        print(results)
+        
         ret: List[Tuple[uint64, uint64]]  = []
         for item in results:
             ret.append((uint64(item['timestamp']), uint64(item['difficulty'])))
+        
+        self.log.info(f"{launcher_id}, current difficulty : {ret[0][1]}, partials count : {len(ret)}")        
         return ret
-
