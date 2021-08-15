@@ -175,5 +175,7 @@ class MongoDbPoolStore(AbstractPoolStore):
         for item in results:
             ret.append((uint64(item['timestamp']), uint64(item['difficulty'])))
         
-        self.log.info(f"{launcher_id}, current difficulty : {ret[0][1]}, partials count : {len(ret)}")        
+        if(len(ret) > 0) :
+            self.log.info(f"{launcher_id}, current difficulty : {ret[0][1]}, partials count : {len(ret)}")        
+            
         return ret
