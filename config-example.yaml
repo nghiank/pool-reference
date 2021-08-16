@@ -26,7 +26,7 @@ confirmation_security_threshold: 32
 payment_interval: 600
 max_additions_per_transaction: 400
 number_of_partials_target: 300
-time_target: 86400
+time_target: 21600
 relative_lock_height: 32
 logging:
   log_path: ~/log/chia
