@@ -31,6 +31,18 @@ class MongoDbPoolStore(AbstractPoolStore):
         self.db_name = db_name
         self.log = logging.getLogger(__name__)
     
+    def set_log(self, log):
+        self.log = log
+
+    def get_update_result(self, update_result):
+        return {
+            'acknowledged': update_result.acknowledged,
+            'matched_count': update_result.matched_count,
+            'modified_count': update_result.modified_count,
+            'raw_result': update_result.raw_result,
+            'upserted_id': update_result.upserted_id
+        }
+
     def create_farmer(self):
         farmer = self.db[MongoDbPoolStore.FARMER]
         farmer.create_index([("launcher_id", pymongo.DESCENDING)], unique=True)
@@ -149,7 +161,9 @@ class MongoDbPoolStore(AbstractPoolStore):
 
     async def clear_farmer_points(self) -> None:
         farmer = self.db[MongoDbPoolStore.FARMER]
-        farmer.update_many({}, {'$set': { 'points': 0 }})
+        result = farmer.update_many({}, {'$set': { 'points': 0 }})
+        self.log.info(f"Clear point farmer results: {self.get_update_result(result)}")
+
 
     async def add_partial(self, launcher_id: bytes32, timestamp: uint64, difficulty: uint64):
         partial = self.db[MongoDbPoolStore.PARTIAL]
@@ -163,9 +177,10 @@ class MongoDbPoolStore(AbstractPoolStore):
         result = partial.update_one(filter, {'$set': updated_obj }, upsert=True)
         farmer = self.db[MongoDbPoolStore.FARMER]
         filter = { 'launcher_id': launcher_id.hex()}
-        farmer.update_one(filter, {
+        result = farmer.update_one(filter, {
             '$inc': { 'points': difficulty} 
         })
+        self.log.info(f"Update point result {launcher_id} difficulty: {difficulty} update_result={self.get_update_result(result)}")
 
     async def get_recent_partials(self, launcher_id: bytes32, count: int) -> List[Tuple[uint64, uint64]]:
         partial = self.db[MongoDbPoolStore.PARTIAL]

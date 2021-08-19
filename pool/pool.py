@@ -79,6 +79,7 @@ class Pool:
         self.constants = constants
 
         self.store: AbstractPoolStore = pool_store or SqlitePoolStore()
+        self.store.set_log(self.log)
 
         self.pool_fee = pool_config["pool_fee"]
 
