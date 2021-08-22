@@ -8,6 +8,8 @@ import traceback
 import ssl
 import os
 import yaml
+import secrets
+import datetime
 from typing import Dict, Callable, Optional
 
 import aiohttp
@@ -255,7 +257,6 @@ class PoolServer:
             return error_response(
                 PoolErrorCode.FARMER_NOT_KNOWN, f"Farmer with launcher_id {launcher_id.hex()} unknown."
             )
-
         # Validate provided signature
         signature: G2Element = G2Element.from_bytes(hexstr_to_bytes(request_obj.rel_url.query["signature"]))
         message: bytes32 = std_hash(
@@ -268,8 +269,14 @@ class PoolServer:
             )
 
         self.pool.log.info(f"Login successful for launcher_id: {launcher_id.hex()}")
-
-        return await self.login_response(launcher_id)
+        # Generate new login token 
+        login_token = secrets.token_urlsafe(128)
+        expires = datetime.datetime.utcnow() + datetime.timedelta(days=3)
+        await self.pool.store.update_login_token(launcher_id, login_token, expires)
+        redirect_url = self.pool_config['site_pool_url']+"/account/" + launcher_id.hex() + "?token=" +login_token
+        # To be deleted
+        self.pool.log.info(redirect_url)
+        return web.HTTPFound(redirect_url)        
 
     async def login_response(self, launcher_id):
         record: Optional[FarmerRecord] = await self.pool.store.get_farmer_record(launcher_id)

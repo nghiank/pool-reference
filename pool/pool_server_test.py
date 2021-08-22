@@ -1,6 +1,6 @@
-#Start mongoDB locally
+# Start mongodb locally.
 # Run test:
-# =>python -m unittest pool/pool_test.py
+# =>python -m unittest pool/pool_server_test.py
 # Suggest to have Python > 3.9.5
 # Ctl+C to interupt when done
 from unittest import IsolatedAsyncioTestCase
@@ -27,6 +27,9 @@ from chia.types.blockchain_format.program import Program, SerializedProgram
 from chia.pools.pool_wallet_info import PoolState, FARMING_TO_POOL
 from chia.util.byte_types import hexstr_to_bytes
 from .pool import Pool
+from .pool_server import PoolServer
+from aiohttp import web
+from aiohttp.test_utils import make_mocked_request
 from chia.util.config import load_config
 from chia.util.default_root import DEFAULT_ROOT_PATH
 from chia.consensus.constants import ConsensusConstants
@@ -63,10 +66,9 @@ LAUNCHER_ID=ONE_BYTES
 LAUNCHER_ID2=TWO_BYTES
 LAUNCHER_ID3=THREE_BYTES
 
-class PoolTest(IsolatedAsyncioTestCase):
+class PoolServerTest(IsolatedAsyncioTestCase):
     @classmethod
     def setUpClass(cls):
-
         cls.config = load_config(DEFAULT_ROOT_PATH, "config.yaml")
         # We load our configurations from here
         with open(os.getcwd() + "/config-example.yaml") as f:
@@ -74,10 +76,11 @@ class PoolTest(IsolatedAsyncioTestCase):
         cls.overrides = cls.config["network_overrides"]["constants"][cls.config["selected_network"]]
         cls.constants: ConsensusConstants = DEFAULT_CONSTANTS.replace_str_to_bytes(**cls.overrides)
         cls.store = MongoDbPoolStore()
+        cls.pool_server = PoolServer(cls.config, cls.constants, cls.store)
+
 
     async def asyncSetUp(self):
-        await self.store.connect()
-        self.pool = Pool(self.config, self.pool_config, self.constants, self.store)
+        await self.store.connect()        
 
     async def asyncTearDown(self):
         self.store.db[MongoDbPoolStore.FARMER].drop()
@@ -160,65 +163,27 @@ class PoolTest(IsolatedAsyncioTestCase):
             cookies=dict({}),
             query=dict({}),
             remote='1.1.1.1')
-    
-    @patch.object(Pool, 'get_and_validate_singleton_state')
-    async def test_update_farmer_record(self, mock_get_and_validate_singleton_state):
+        
+    @patch('pool.pool_server.validate_authentication_token')
+    @patch('pool.pool_server.AugSchemeMPL.verify')
+    async def test_get_login(self, mock_validate_authentication_token, mock_verify):
+        
         farmer_record = self.make_farmer_record()
         metadata = self.make_request_metadata()
         pp = bytes(farmer_record.singleton_tip)        
         await self.store.add_farmer_record(farmer_record, metadata)
 
-        authentication_token_timeout: uint8 = self.pool_config["authentication_token_timeout"]
-        p = PrivateKey.from_bytes(TWO_BYTES).get_g1()
-        blob = bytes(p)
-        new_authentication_pk = G1Element.from_bytes(blob)
+        url = ('/login_info?launcher_id=' + farmer_record.launcher_id.hex() + '&authentication_token=123' +
+                '&signature=95f0807b7d302aee80928082667ea7cedbe0bd5229e43d791c64c15fbc2aab00deb1a7fb8981239c0aaec32f5dc0e3d305e2ba54d6a6d55122862b4342d368161f45b859a4b989853d2a0bc51483ab2273ab009cdfc0e8df240e581f4c18a3fc')
+        req = make_mocked_request('GET', url, headers={'token': 'x'})                
 
-        put_farmer_payload = PutFarmerPayload(
-            farmer_record.launcher_id,
-            get_current_authentication_token(authentication_token_timeout),
-            new_authentication_pk,
-            PAYOUT_INSTRUCTION2,
-            None,        
-        )        
-        owner_sk = PrivateKey.from_bytes(ONE_BYTES)
-        signature: G2Element = AugSchemeMPL.sign(owner_sk, put_farmer_payload.get_hash())
-        put_farmer_request = PutFarmerRequest(put_farmer_payload, signature)
-        put_farmer_request = PutFarmerRequest(
-            put_farmer_payload,
-            signature
-        )
-        self.pool.farmer_update_cooldown_seconds = 4
-        mock_get_and_validate_singleton_state.return_value = (self.make_child_solution(), self.make_singleton_tip_state(), True)
-
-        # Start to update farmer.
-        put_farmer_response = await self.pool.update_farmer(put_farmer_request, self.make_request_metadata())
-        ret_tasks = [
-            t for t in asyncio.all_tasks() if t is not asyncio.current_task()
-        ]        
-        assert 1 == len(ret_tasks)
-
-        # Try to update the farmer point while the update_farmer task is still 
-        # in progress - Simulate the real scenarios
-        async with self.store.lock:            
-            new_point = 99999        
-            new_difficulty = 99
-            latest_farmer_record = self.make_farmer_record(
-                LAUNCHER_ID, 
-                ONE_BYTES,
-                delay_time=60, 
-                point=new_point, difficulty = new_difficulty)         
-            await self.store.add_farmer_record(latest_farmer_record, metadata)
-
-        # Wait for update_farmer task to be completed.
-        await asyncio.gather(*ret_tasks)
+        mock_validate_authentication_token.return_value = True
+        mockk_verify = True
+        res = await self.pool_server.get_login(request_obj=req)        
+        filter = { 'launcher_id': farmer_record.launcher_id.hex() }
+        res = self.store.db['authentication'].find(filter)
+        self.assertEqual(len(list(res)), 1)
         
-        # Verify the latest farmer info.
-        final_farmer = await self.store.get_farmer_record(farmer_record.launcher_id)
-        self.assertEqual(new_point, final_farmer.points)        
-        self.assertEqual(2000, final_farmer.difficulty)  
-        self.assertEqual(new_authentication_pk, final_farmer.authentication_public_key)
-        self.assertEqual(PAYOUT_INSTRUCTION2, final_farmer.payout_instructions)
-  
     
 if __name__ == '__main__':
     unittest.main()

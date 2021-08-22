@@ -24,6 +24,7 @@ class MongoDbPoolStore(AbstractPoolStore):
     # MongoDB collection name
     FARMER = 'farmer'
     PARTIAL = 'partial'
+    AUTH = 'authentication'
 
     def __init__(self, endpoint='mongodb://127.0.0.1:27017', db_name='pool'):
         super().__init__()
@@ -49,6 +50,10 @@ class MongoDbPoolStore(AbstractPoolStore):
     
     def create_partial(self):
         partial = self.db[MongoDbPoolStore.PARTIAL]
+
+    def create_auth(self):
+        auth = self.db[MongoDbPoolStore.AUTH]
+        auth.create_index([("launcher_id", pymongo.DESCENDING)], unique=True)
     
     async def connect(self): 
         self.db = self.client[self.db_name]          
@@ -56,6 +61,8 @@ class MongoDbPoolStore(AbstractPoolStore):
             self.create_farmer()           
         if not(MongoDbPoolStore.PARTIAL in self.db.list_collection_names()):
             self.create_partial()           
+        if not(MongoDbPoolStore.AUTH in self.db.list_collection_names()):
+            self.create_auth()           
 
     @staticmethod
     def _row_to_farmer_record(item) -> FarmerRecord:
@@ -193,3 +200,13 @@ class MongoDbPoolStore(AbstractPoolStore):
         if len(ret) > 0:
             self.log.info(f"{launcher_id}, current difficulty : {ret[0][1]}, partials count : {len(ret)}")        
         return ret
+
+    async def update_login_token(self, launcher_id, login_token, expires):
+        auth = self.db[MongoDbPoolStore.AUTH]
+        filter = { 'launcher_id': launcher_id.hex() }
+        updated_obj = {            
+            'login_token': login_token,
+            'timestamp': expires
+        }
+        result = auth.update_one(filter, {'$set': updated_obj }, upsert=True)
+        self.log.info(f"Update login token : update_result={self.get_update_result(result)}")
