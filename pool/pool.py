@@ -683,12 +683,33 @@ class Pool:
             response_dict["suggested_difficulty"] = is_new_value
             if is_new_value:
                 farmer_dict["difficulty"] = request.payload.suggested_difficulty
-
+        
         async def update_farmer_later():
             await asyncio.sleep(self.farmer_update_cooldown_seconds)
-            await self.store.add_farmer_record(FarmerRecord.from_json_dict(farmer_dict), metadata)
-            self.farmer_update_blocked.remove(launcher_id)
-            self.log.info(f"Updated farmer: {response_dict}")
+            async with self.store.lock:
+                farmer_record: Optional[FarmerRecord] = await self.store.get_farmer_record(launcher_id)
+                if farmer_record is None:
+                    return error_dict(PoolErrorCode.FARMER_NOT_KNOWN, f"Farmer with launcher_id {launcher_id} not known. in update_farmer_later")
+                # The farmer point may be get updated during the update_farmer cooldown period.
+                # FarmerRecord.from_json_dict cannot handle authentication_public_key so we have
+                # to create this merge object
+                merged_farmer_record = FarmerRecord(
+                    farmer_record.launcher_id,
+                    farmer_record.p2_singleton_puzzle_hash,
+                    farmer_record.delay_time,
+                    farmer_record.delay_puzzle_hash,
+                    farmer_dict["authentication_public_key"],
+                    farmer_record.singleton_tip,
+                    farmer_record.singleton_tip_state,
+                    farmer_record.points,
+                    farmer_dict["difficulty"],
+                    farmer_dict["payout_instructions"],
+                    farmer_record.is_pool_member
+                )
+                await self.store.add_farmer_record(merged_farmer_record, metadata)
+                self.farmer_update_blocked.remove(launcher_id)
+                self.log.info(f"Updated farmer: {response_dict}")
+                self.log.info(f"Farmer new data: {merged_farmer_record}")
 
         self.farmer_update_blocked.add(launcher_id)
         asyncio.create_task(update_farmer_later())
