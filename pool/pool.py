@@ -690,27 +690,30 @@ class Pool:
                 farmer_record: Optional[FarmerRecord] = await self.store.get_farmer_record(launcher_id)
                 if farmer_record is None:
                     return error_dict(PoolErrorCode.FARMER_NOT_KNOWN, f"Farmer with launcher_id {launcher_id} not known. in update_farmer_later")
-                # The farmer point may be get updated during the update_farmer cooldown period.
-                # FarmerRecord.from_json_dict cannot handle authentication_public_key so we have
-                # to create this merge object
-                merged_farmer_record = FarmerRecord(
-                    farmer_record.launcher_id,
-                    farmer_record.p2_singleton_puzzle_hash,
-                    farmer_record.delay_time,
-                    farmer_record.delay_puzzle_hash,
-                    farmer_dict["authentication_public_key"],
-                    farmer_record.singleton_tip,
-                    farmer_record.singleton_tip_state,
-                    farmer_record.points,
-                    farmer_dict["difficulty"],
-                    farmer_dict["payout_instructions"],
-                    farmer_record.is_pool_member
-                )
-                await self.store.add_farmer_record(merged_farmer_record, metadata)
-                self.farmer_update_blocked.remove(launcher_id)
-                self.log.info(f"Updated farmer: {response_dict}")
-                self.log.info(f"Farmer new data: {merged_farmer_record}")
-
+                # The farmer point may be get updated during the update_farmer cooldown period.       
+                try:         
+                    self.log.info(f"farmer_dict : {farmer_dict}")
+                    new_farmer_record = FarmerRecord.from_json_dict(farmer_dict)
+                    merged_farmer_record = FarmerRecord(
+                        farmer_record.launcher_id,
+                        farmer_record.p2_singleton_puzzle_hash,
+                        farmer_record.delay_time,
+                        farmer_record.delay_puzzle_hash,
+                        new_farmer_record.authentication_public_key,
+                        farmer_record.singleton_tip,
+                        farmer_record.singleton_tip_state,
+                        farmer_record.points,
+                        new_farmer_record.difficulty,
+                        new_farmer_record.payout_instructions,
+                        farmer_record.is_pool_member
+                    )
+                    await self.store.add_farmer_record(merged_farmer_record, metadata)
+                    self.log.info(f"Updated farmer: {response_dict}")
+                    self.log.info(f"Farmer new data: {merged_farmer_record}")
+                except:
+                    self.log.error("Fatal error in update_farmer_later", exc_info=True)
+                finally:
+                    self.farmer_update_blocked.remove(launcher_id)     
         self.farmer_update_blocked.add(launcher_id)
         asyncio.create_task(update_farmer_later())
 
