@@ -1,9 +1,11 @@
 # Start local DynamoDB: 
 # =>java -Djava.library.path=./DynamoDBLocal_lib -jar DynamoDBLocal.jar -sharedDb
 # Run test:
-# =>python -m unittest pool/store/dynamo_store_test.py
+# =>python -m unittest pool/store/mongodb_store_test.py
 # Suggest to have Python > 3.9.5
 # Ctl+C to interupt when done
+import logging
+import time
 from unittest import IsolatedAsyncioTestCase
 from typing import Optional, Set, List, Tuple, Dict
 import unittest
@@ -44,6 +46,15 @@ class MongoDbPoolStoreTest(IsolatedAsyncioTestCase):
         cls.store = MongoDbPoolStore()
 
     async def asyncSetUp(self):
+        root = logging.getLogger()
+        root.setLevel(logging.DEBUG)
+
+        handler = logging.StreamHandler(sys.stdout)
+        handler.setLevel(logging.DEBUG)
+        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        handler.setFormatter(formatter)
+        root.addHandler(handler)
+
         await self.store.connect()
 
     async def asyncTearDown(self):
@@ -304,6 +315,16 @@ class MongoDbPoolStoreTest(IsolatedAsyncioTestCase):
         self.assertEqual(farmer.points, 0)
         farmer2 = await self.store.get_farmer_record(LAUNCHER_ID2)
         self.assertEqual(farmer2.points, 0)
+
+    async def test_clear_many_farmer_points(self):
+        metadata = self.make_request_metadata()
+        for i in range(10):
+            BYTES=i.to_bytes(32, 'big')
+            farmer_record = self.make_farmer_record(launcher_id=BYTES, p2_singleton_puzzle_hash=TWO_BYTES)
+            await self.store.add_farmer_record(farmer_record, metadata)
+        await self.store.clear_farmer_points()
+        farmer = await self.store.get_farmer_record(BYTES)
+
 
     async def test_add_partial(self):
         farmer_record = self.make_farmer_record()
