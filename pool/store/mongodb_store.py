@@ -210,3 +210,24 @@ class MongoDbPoolStore(AbstractPoolStore):
         }
         result = auth.update_one(filter, {'$set': updated_obj }, upsert=True)
         self.log.info(f"Update login token : update_result={self.get_update_result(result)}")
+
+    async def get_farmer_fee(self) -> Dict:
+        result = self.db[MongoDbPoolStore.FARMER].aggregate([{
+            '$lookup': {
+                'from': "farmerMeta",
+                'localField': "launcher_id",
+                'foreignField': "_id",
+                'as': "farmerMeta"
+            }
+        }])
+        ret:Dict = {}
+        for item in result:
+            ph: bytes32 = bytes32(bytes.fromhex(item['payout_instructions']))
+            print(f"ph={ph}")
+            farmerMeta = item['farmerMeta']
+            if len(farmerMeta) > 0:
+                if 'fee' in farmerMeta[0]:
+                    ret[ph] = farmerMeta[0]['fee']
+        return ret
+            
+

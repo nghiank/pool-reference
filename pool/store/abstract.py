@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 import asyncio
-from typing import Optional, Set, List, Tuple
+from typing import Dict, Optional, Set, List, Tuple
 
 from chia.pools.pool_wallet_info import PoolState
 from chia.types.blockchain_format.sized_bytes import bytes32
@@ -69,3 +69,7 @@ class AbstractPoolStore(ABC):
     @abstractmethod
     async def get_recent_partials(self, launcher_id: bytes32, count: int) -> List[Tuple[uint64, uint64]]:
         """Fetch last ``count`` partials for Farmer identified by ``launcher_id``"""
+
+    @abstractmethod
+    async def get_farmer_fee(self) -> Dict:
+        """Fetch all the farmer fee with puzzle hash as key, fee as value"""

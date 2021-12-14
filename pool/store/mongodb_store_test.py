@@ -1,7 +1,6 @@
-# Start local DynamoDB: 
-# =>java -Djava.library.path=./DynamoDBLocal_lib -jar DynamoDBLocal.jar -sharedDb
+# Start local MongoDB: 
 # Run test:
-# =>python -m unittest pool/store/mongodb_store_test.py
+# =>python3 -m unittest pool/store/mongodb_store_test.py
 # Suggest to have Python > 3.9.5
 # Ctl+C to interupt when done
 import logging
@@ -30,6 +29,7 @@ from chia.pools.pool_wallet_info import PoolState, FARMING_TO_POOL
 from chia.util.byte_types import hexstr_to_bytes
 
 PAYOUT_INSTRUCTION = '344587cf06a39db471d2cc027504e8688a0a67cce961253500c956c73603fd58'
+PAYOUT_INSTRUCTION1 = '9199934f06a39db471d2cc027504e8688a0a67cce961253500c956c73603fd58'
 ONE=1
 TWO=2
 THREE=3
@@ -85,6 +85,7 @@ class MongoDbPoolStoreTest(IsolatedAsyncioTestCase):
     def make_farmer_record(self, 
         launcher_id=LAUNCHER_ID, 
         p2_singleton_puzzle_hash=ONE_BYTES,
+        payout_instruction = PAYOUT_INSTRUCTION,
         delay_time=60, 
         point=10000, difficulty=2000) -> FarmerRecord:
 
@@ -93,7 +94,6 @@ class MongoDbPoolStoreTest(IsolatedAsyncioTestCase):
         authentication_pk = G1Element.from_bytes(blob)
         singleton_tip:CoinSpend = self.make_child_solution()
         singleton_tip_state:PoolState = self.make_singleton_tip_state()
-        payout_instruction = '344587cf06a39db471d2cc027504e8688a0a67cce961253500c956c73603fd58'
         return FarmerRecord(
                 #launcher_id
                 launcher_id,                
@@ -123,7 +123,7 @@ class MongoDbPoolStoreTest(IsolatedAsyncioTestCase):
                 difficulty,
 
                 #payout_instruction
-                PAYOUT_INSTRUCTION,
+                payout_instruction,
 
                 #is_pool_member
                 True
@@ -345,6 +345,42 @@ class MongoDbPoolStoreTest(IsolatedAsyncioTestCase):
         partial = await self.store.get_recent_partials(launcher_id, 2)
         self.assertEqual(partial[0], (123458,3002))
         self.assertEqual(partial[1], (123457,3001))
+    
+    async def test_get_farmer_fee(self):
+        farmer_record = self.make_farmer_record()
+        metadata = self.make_request_metadata()
+        await self.store.add_farmer_record(farmer_record, metadata) 
+
+        farmer_record1 = self.make_farmer_record(
+            launcher_id=TWO_BYTES, 
+            payout_instruction = PAYOUT_INSTRUCTION1,
+            p2_singleton_puzzle_hash=TWO_BYTES)
+        await self.store.add_farmer_record(farmer_record1, metadata)
+
+        # add farmeMeta 
+        farmerMeta = self.store.db['farmerMeta']
+        
+        # add fee for farmer
+        farmer_meta_json = {
+            '_id': farmer_record.launcher_id.hex(),
+            'fee': 0.01
+        }
+        filter = { '_id':farmer_record.launcher_id.hex() }
+        farmerMeta.update_one(filter, {'$set': farmer_meta_json }, upsert=True)
+
+        # add fee for farmer1
+        farmer_meta_json1 = {
+            '_id': farmer_record1.launcher_id.hex(),
+            'fee': 0.02
+        }
+        filter = { '_id':farmer_record1.launcher_id.hex() }
+        farmerMeta.update_one(filter, {'$set': farmer_meta_json1 }, upsert=True)
+
+        ret = await self.store.get_farmer_fee()
+        self.assertEqual(len(ret), 2)
+        self.assertEqual(ret.get(bytes.fromhex(farmer_record.payout_instructions)), 0.01)
+        self.assertEqual(ret.get(bytes.fromhex(farmer_record1.payout_instructions)), 0.02)
+
 
 if __name__ == '__main__':
     unittest.main()
