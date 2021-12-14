@@ -349,6 +349,86 @@ class Pool:
                 self.log.error(f"Unexpected error in collect_pool_rewards_loop: {e} {error_stack}")
                 await asyncio.sleep(self.collect_pool_rewards_interval)
 
+    async def create_payment(self):
+        if not self.blockchain_state["sync"]["synced"]:
+            self.log.warning("Not synced, waiting")
+            await asyncio.sleep(60)
+            return
+
+        if self.pending_payments.qsize() != 0:
+            self.log.warning(f"Pending payments ({self.pending_payments.qsize()}), waiting")
+            await asyncio.sleep(60)
+            return
+
+        self.log.info("Starting to create payment")
+        coin_records: List[CoinRecord] = await self.node_rpc_client.get_coin_records_by_puzzle_hash(
+            self.default_target_puzzle_hash,
+            include_spent_coins=False,
+            start_height=self.scan_start_height,
+        )
+
+        if len(coin_records) == 0:
+            self.log.info("No funds to distribute.")
+            await asyncio.sleep(120)
+            return
+
+        total_amount_claimed = sum([c.coin.amount for c in coin_records])
+        pool_coin_amount = 0 
+        if total_amount_claimed < calculate_pool_reward(uint32(1)):  # 1.75 XCH
+            self.log.info(f"Do not have enough funds to distribute: {total_amount_claimed}, skipping payout")
+            await asyncio.sleep(120)
+            return
+
+        self.log.info(f"Total amount claimed: {total_amount_claimed / (10 ** 12)}")
+        async with self.store.lock:
+            # Get the points of each farmer, as well as payout instructions. Here a chia address is used,
+            # but other blockchain addresses can also be used.
+            results = await asyncio.gather(
+                self.store.get_farmer_points_and_payout_instructions(),
+                self.store.get_farmer_fee()
+            )
+            points_and_ph: List[
+                Tuple[uint64, bytes]
+            ] = results[0]
+            ph_fee:Dict = results[1]
+
+            total_points = sum([pt for (pt, ph) in points_and_ph])
+
+            if total_points > 0:
+                mojo_per_point = floor(total_amount_claimed / total_points)
+                self.log.info(f"Paying out {mojo_per_point} mojo / point - fee(default 1%)")
+                additions_sub_list: List[Dict] = []
+                for points, ph in points_and_ph:
+                    fee = self.pool_fee
+                    if ph in ph_fee:
+                        self.log.info(f"Fee for puzzle hash{ph.hex()} found in database : {fee}")
+                        fee = ph_fee[ph]
+                    if fee >= 0.9 or fee < 0:
+                        self.log.info(f"Invalid fee {fee} for puzzle hash:{ph.hex()}")
+                        fee = 0.01
+                    if points > 0:
+                        charge = floor(points * mojo_per_point * fee)
+                        amount = points * mojo_per_point - charge
+                        pool_coin_amount = pool_coin_amount + charge
+                        additions_sub_list.append({"puzzle_hash": ph, "amount": amount})
+
+                    if len(additions_sub_list) == self.max_additions_per_transaction:
+                        await self.pending_payments.put(additions_sub_list.copy())
+                        self.log.info(f"Will make payments: {additions_sub_list}")
+                        additions_sub_list = []
+                if pool_coin_amount > 0:
+                    self.log.info(f"Pool coin amount (includes blockchain fee) {pool_coin_amount  / (10 ** 12)}")
+                    additions_sub_list.append({"puzzle_hash": self.pool_fee_puzzle_hash, "amount": pool_coin_amount})
+                if len(additions_sub_list) > 0:
+                    self.log.info(f"Will make payments: {additions_sub_list}")
+                    await self.pending_payments.put(additions_sub_list.copy())
+
+                # Subtract the points from each farmer
+                await self.store.clear_farmer_points()
+            else:
+                self.log.info(f"No points for any farmer. Waiting {self.payment_interval}")
+        await asyncio.sleep(self.payment_interval)
+
     async def create_payment_loop(self):
         """
         Calculates the points of each farmer, and splits the total funds received into coins for each farmer.
@@ -356,75 +436,7 @@ class Pool:
         """
         while True:
             try:
-                if not self.blockchain_state["sync"]["synced"]:
-                    self.log.warning("Not synced, waiting")
-                    await asyncio.sleep(60)
-                    continue
-
-                if self.pending_payments.qsize() != 0:
-                    self.log.warning(f"Pending payments ({self.pending_payments.qsize()}), waiting")
-                    await asyncio.sleep(60)
-                    continue
-
-                self.log.info("Starting to create payment")
-
-                coin_records: List[CoinRecord] = await self.node_rpc_client.get_coin_records_by_puzzle_hash(
-                    self.default_target_puzzle_hash,
-                    include_spent_coins=False,
-                    start_height=self.scan_start_height,
-                )
-
-                if len(coin_records) == 0:
-                    self.log.info("No funds to distribute.")
-                    await asyncio.sleep(120)
-                    continue
-
-                total_amount_claimed = sum([c.coin.amount for c in coin_records])
-                pool_coin_amount = int(total_amount_claimed * self.pool_fee)
-                amount_to_distribute = total_amount_claimed - pool_coin_amount
-
-                if total_amount_claimed < calculate_pool_reward(uint32(1)):  # 1.75 XCH
-                    self.log.info(f"Do not have enough funds to distribute: {total_amount_claimed}, skipping payout")
-                    await asyncio.sleep(120)
-                    continue
-
-                self.log.info(f"Total amount claimed: {total_amount_claimed / (10 ** 12)}")
-                self.log.info(f"Pool coin amount (includes blockchain fee) {pool_coin_amount  / (10 ** 12)}")
-                self.log.info(f"Total amount to distribute: {amount_to_distribute  / (10 ** 12)}")
-
-                async with self.store.lock:
-                    # Get the points of each farmer, as well as payout instructions. Here a chia address is used,
-                    # but other blockchain addresses can also be used.
-                    points_and_ph: List[
-                        Tuple[uint64, bytes]
-                    ] = await self.store.get_farmer_points_and_payout_instructions()
-                    total_points = sum([pt for (pt, ph) in points_and_ph])
-                    if total_points > 0:
-                        mojo_per_point = floor(amount_to_distribute / total_points)
-                        self.log.info(f"Paying out {mojo_per_point} mojo / point")
-
-                        additions_sub_list: List[Dict] = [
-                            {"puzzle_hash": self.pool_fee_puzzle_hash, "amount": pool_coin_amount}
-                        ]
-                        for points, ph in points_and_ph:
-                            if points > 0:
-                                additions_sub_list.append({"puzzle_hash": ph, "amount": points * mojo_per_point})
-
-                            if len(additions_sub_list) == self.max_additions_per_transaction:
-                                await self.pending_payments.put(additions_sub_list.copy())
-                                self.log.info(f"Will make payments: {additions_sub_list}")
-                                additions_sub_list = []
-
-                        if len(additions_sub_list) > 0:
-                            self.log.info(f"Will make payments: {additions_sub_list}")
-                            await self.pending_payments.put(additions_sub_list.copy())
-
-                        # Subtract the points from each farmer
-                        await self.store.clear_farmer_points()
-                    else:
-                        self.log.info(f"No points for any farmer. Waiting {self.payment_interval}")
-
-                await asyncio.sleep(self.payment_interval)
+                await self.create_payment()
             except asyncio.CancelledError:
                 self.log.info("Cancelled create_payments_loop, closing")
                 return
@@ -696,7 +708,7 @@ class Pool:
                     return error_dict(PoolErrorCode.FARMER_NOT_KNOWN, f"Farmer with launcher_id {launcher_id} not known. in update_farmer_later")
                 # The farmer point may be get updated during the update_farmer cooldown period.       
                 try:         
-                    self.log.info(f"farmer_dict : {farmer_dict}")
+                    self.log.info(f"Farmer_dict : {farmer_dict}")
                     new_farmer_record = FarmerRecord.from_json_dict(farmer_dict)
                     merged_farmer_record = FarmerRecord(
                         farmer_record.launcher_id,
