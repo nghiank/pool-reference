@@ -223,7 +223,6 @@ class MongoDbPoolStore(AbstractPoolStore):
         ret:Dict = {}
         for item in result:
             ph: bytes32 = bytes32(bytes.fromhex(item['payout_instructions']))
-            print(f"ph={ph}")
             farmerMeta = item['farmerMeta']
             if len(farmerMeta) > 0:
                 if 'fee' in farmerMeta[0]:
