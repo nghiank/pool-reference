@@ -68,7 +68,6 @@ def get_ssl_context(config):
 
 class PoolServer:
     def __init__(self, config: Dict, constants: ConsensusConstants, pool_store: Optional[AbstractPoolStore] = None):
-
         # We load our configurations from here
         with open(os.getcwd() + "/config.yaml") as f:
             pool_config: Dict = yaml.safe_load(f)
@@ -183,7 +182,8 @@ class PoolServer:
             return authentication_token_error
 
         post_farmer_response = await self.pool.add_farmer(
-            post_farmer_request, self.post_metadata_from_request(request_obj))
+            post_farmer_request, self.post_metadata_from_request(request_obj)
+        )
 
         self.pool.log.info(
             f"post_farmer response {post_farmer_response}, "
@@ -204,8 +204,9 @@ class PoolServer:
             return authentication_token_error
 
         # Process the request
-        put_farmer_response = await self.pool.update_farmer(put_farmer_request,
-                                                            self.post_metadata_from_request(request_obj))
+        put_farmer_response = await self.pool.update_farmer(
+            put_farmer_request, self.post_metadata_from_request(request_obj)
+        )
 
         self.pool.log.info(
             f"put_farmer response {put_farmer_response}, "

@@ -6,6 +6,7 @@ pool_info:
 welcome_message: "Welcome to the Vast pool!"
 local_debug: False
 pool_fee: 0.01
+block_claim_fee: 0
 pool_url: https://vastpool.net
 site_pool_url: https://site.vastpool.net
 db_endpoint: mongodb://127.0.0.1:27017
