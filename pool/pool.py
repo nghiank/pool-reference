@@ -469,8 +469,7 @@ class Pool:
                     continue
 
                 total_amount_claimed = sum([c.coin.amount for c in coin_records])
-                pool_coin_amount = int(total_amount_claimed * self.pool_fee)
-                amount_to_distribute = total_amount_claimed - pool_coin_amount
+                pool_coin_amount = 0                
 
                 if total_amount_claimed < calculate_pool_reward(uint32(1)):  # 1.75 XCH
                     self.log.info(f"Do not have enough funds to distribute: {total_amount_claimed}, skipping payout")
@@ -478,32 +477,47 @@ class Pool:
                     continue
 
                 self.log.info(f"Total amount claimed: {total_amount_claimed / (10 ** 12)}")
-                self.log.info(f"Pool coin amount (includes blockchain fee) {pool_coin_amount / (10 ** 12)}")
-                self.log.info(f"Total amount to distribute: {amount_to_distribute / (10 ** 12)}")
 
                 async with self.store.lock:
                     # Get the points of each farmer, as well as payout instructions. Here a chia address is used,
-                    # but other blockchain addresses can also be used.
+                    # but other blockchain addresses can also be used.                    
+                    results = await asyncio.gather(
+                           self.store.get_farmer_points_and_payout_instructions(),
+                           self.store.get_farmer_fee()
+                    )
                     points_and_ph: List[
                         Tuple[uint64, bytes]
-                    ] = await self.store.get_farmer_points_and_payout_instructions()
+                    ] = results[0]
+                    ph_fee:Dict = results[1]
+                    
                     total_points = sum([pt for (pt, ph) in points_and_ph])
                     if total_points > 0:
-                        mojo_per_point = floor(amount_to_distribute / total_points)
+                        mojo_per_point = floor(total_amount_claimed / total_points)
                         self.log.info(f"Paying out {mojo_per_point} mojo / point")
 
-                        additions_sub_list: List[Dict] = [
-                            {"puzzle_hash": self.pool_fee_puzzle_hash, "amount": pool_coin_amount}
-                        ]
-                        for points, ph in points_and_ph:
+                        additions_sub_list: List[Dict] = []
+                        for points, ph in points_and_ph:                            
+                            fee = self.pool_fee
+                            if ph in ph_fee:
+                                self.log.info(f"Fee for puzzle hash{ph.hex()} found in database : {fee}")
+                                fee = ph_fee[ph]
+                            if fee >= 0.9 or fee < 0:
+                                self.log.info(f"Invalid fee {fee} for puzzle hash:{ph.hex()}")
+                                fee = 0.01
                             if points > 0:
-                                additions_sub_list.append({"puzzle_hash": ph, "amount": points * mojo_per_point})
+                                charge = floor(points * mojo_per_point * fee)
+                                amount = points * mojo_per_point - charge
+                                pool_coin_amount = pool_coin_amount + charge
+                                additions_sub_list.append({"puzzle_hash": ph, "amount": amount})
 
                             if len(additions_sub_list) == self.max_additions_per_transaction:
                                 await self.pending_payments.put(additions_sub_list.copy())
                                 self.log.info(f"Will make payments: {additions_sub_list}")
                                 additions_sub_list = []
 
+                        if pool_coin_amount > 0:
+                            self.log.info(f"Pool coin amount (includes blockchain fee) {pool_coin_amount  / (10 ** 12)}")
+                            additions_sub_list.append({"puzzle_hash": self.pool_fee_puzzle_hash, "amount": pool_coin_amount})
                         if len(additions_sub_list) > 0:
                             self.log.info(f"Will make payments: {additions_sub_list}")
                             await self.pending_payments.put(additions_sub_list.copy())
