@@ -50,7 +50,7 @@ class MongoDbPoolStore(AbstractPoolStore):
     
     def create_partial(self):
         partial = self.db[MongoDbPoolStore.PARTIAL]
-        partial.create_index([("launcher_id", pymongo.DESCENDING)], unique=True)
+        partial.create_index([("launcher_id", pymongo.DESCENDING), ("timestamp", pymongo.DESCENDING)], unique=True)
 
     def create_auth(self):
         auth = self.db[MongoDbPoolStore.AUTH]
