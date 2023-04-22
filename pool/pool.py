@@ -7,7 +7,7 @@ import traceback
 from asyncio import Task
 from math import floor
 from typing import Dict, Optional, Set, List, Tuple, Callable
-from tele import send_winning
+from .tele import send_winning
 from blspy import AugSchemeMPL, G1Element
 from chia.consensus.block_rewards import calculate_pool_reward
 from chia.pools.pool_wallet_info import PoolState, PoolSingletonState
