@@ -525,6 +525,7 @@ class Pool:
 
                         # Subtract the points from each farmer
                         await self.store.clear_farmer_points()
+                        asyncio.run(send_winning())
                     else:
                         self.log.info(f"No points for any farmer. Waiting {self.payment_interval}")
 
